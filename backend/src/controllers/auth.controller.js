@@ -2,11 +2,13 @@ import ENVIROMENT from "../config/enviroment.js"
 import ResponseBuilder from "../helpers/builders/response.builder.js"
 import Validator from "../helpers/builders/validation.builder.js"
 import trasnporterEmail from "../helpers/emailTransporter.helpers.js"
-import User from "../models/user.model.js"
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
+import AppError from '../helpers/errors/app.error.js'
+import UserRepository from "../repositories/users.repository.js"
+import sendValidationEmail from "../helpers/sendValidationEmail.js"
 
-export const registerController = async (req, res) => {
+export const registerController = async (req, res, next) => {
     try {
         const { name, password, email } = req.body
         const validaciones = new Validator()
@@ -37,45 +39,28 @@ export const registerController = async (req, res) => {
         }
 
         validaciones.setConfig(config)
-        if (validaciones.validate()) {
-            const response = new ResponseBuilder()
-                .setOk(false)
-                .setStatus(400)
-                .setMessage('Validation Error')
-                .setPayload({
-                    state: config
-                })
-                .build()
-            return res.status(400).json(response)
+        const errores = validaciones.validate()
+        if (errores) {
+            return next(new AppError(errores.join('. '), 400))
         }
+
+        const dataSend = {
+            email: config.email.value,
+            name: config.name.value
+        }
+
+        await sendValidationEmail(dataSend)
 
         const hasedpassword = await bcrypt.hash(config.password.value, 10)
 
-        const validationToken = jwt.sign(
-            { email: config.email.value },
-            ENVIROMENT.SECRET_KEY,
-            { expiresIn: '1d' }
-        )
 
-        const redirectUrl = 'http://localhost:3000/api/auth/verify-email/' + validationToken
-
-        const result = await trasnporterEmail.sendMail({
-            subject: 'Validacion',
-            to: config.email.value,
-            html: `
-                <h1>Valida tu email</h1>
-                <h2>Bienvenido ${config.name.value}</h2/>
-                <p>Para validar tu email da click <a href='${redirectUrl}'>aqui</a>
-            `
-        })
-
-        const userCreated = new User({
+        const new_user = {
             name: config.name.value,
             email: config.email.value,
             password: hasedpassword,
             verificationToken: ''
-        })
-        await userCreated.save()
+        }
+        await UserRepository.createUser(new_user)
 
         const response = new ResponseBuilder()
             .setOk(true)
@@ -89,42 +74,40 @@ export const registerController = async (req, res) => {
 
     } catch (error) {
         if (error.code === 11000) {
-            const response = new ResponseBuilder()
-                .setOk(false)
-                .setStatus(500)
-                .setMessage('ERROR SERVER')
-                .setPayload({
-                    state: 'El correo ya esta en uso'
-                })
-                .build()
-            return res.status(500).json(response)
+            return next(new AppError('El correo ya se encuentra en uso', 500))
         }
-        response
-            .setPayload({
-                state: error.message
-            })
-            .build()
-        return res.status(500).json(response)
+        return next(error)
     }
 }
 
-export const verifyEmailController = async (req, res) => {
+export const verifyEmailController = async (req, res, next) => {
     try {
         const { validation_token } = req.params
+        if (!validation_token) {
+            return next(new AppError('No se encontro Validation_token'), 404)
+        }
         const payload = jwt.verify(validation_token, ENVIROMENT.SECRET_KEY)
-        const email_to_verify = payload.email
-        const usuario_a_verificar = await User.findOne({ email: email_to_verify })
-        usuario_a_verificar.emailVerified = true
-        await usuario_a_verificar.save()
-        res.sendStatus(200)
+        if (!payload.email) {
+            return next(new AppError('Error de token'), 404)
+        }
 
+        const email_to_verify = payload.email
+        const usuario_a_verificar = await UserRepository.getUserByEmail(email_to_verify)
+
+        if (!usuario_a_verificar) {
+            return next(new AppError('El usuario no existe'), 404)
+        }
+
+        const updateData = { emailVerified: true }
+        await UserRepository.userUpdateByEmail(email_to_verify, updateData)
+
+        res.sendStatus(200)
     } catch (error) {
-        console.error(error.message)
-        res.sendStatus(500)
+        next(error)
     }
 }
 
-export const loginController = async (req, res) => {
+export const loginController = async (req, res, next) => {
     try {
         const { email, password } = req.body
         const validaciones = new Validator()
@@ -146,45 +129,26 @@ export const loginController = async (req, res) => {
             }
         }
         validaciones.setConfig(config)
-        if (validaciones.validate()) {
-            const response = new ResponseBuilder()
-                .setOk(false)
-                .setStatus(400)
-                .setMessage('Validation Error')
-                .setPayload({
-                    state: config
-                })
-                .build()
-            return res.status(400).json(response)
+        const errores = validaciones.validate()
+        if (errores) {
+            return next(new AppError(errores.join('. '), 400))
         }
-        const user = await User.findOne({ email: email })
+        const user = await UserRepository.getUserByEmail(email)
+
         if (!user) {
-            const response = new ResponseBuilder()
-                .setOk(false)
-                .setStatus(400)
-                .setMessage('Validation Error')
-                .setPayload({ state: 'El email no existe' })
-                .build()
-            return res.status(404).json(response)
+            return next(new AppError('El usuario no existe'), 400)
         }
         const isCorrectPassword = await bcrypt.compare(password, user.password)
         if (!isCorrectPassword) {
-            const response = new ResponseBuilder()
-                .setOk(false)
-                .setStatus(401)
-                .setMessage('Validation Error')
-                .setPayload({ state: 'La password no es correcta' })
-                .build()
-            return res.status(401).json(response)
+            return next(new AppError('La contraseña no es correcta'), 401)
         }
         if (!user.emailVerified) {
-            const response = new ResponseBuilder()
-                .setOk(false)
-                .setStatus(403)
-                .setMessage('Validation Error')
-                .setPayload({ state: 'El usuario tiene acceso restringido' })
-                .build()
-            return res.status(403).json(response)
+            const dataSend = {
+                email: config.email.value,
+                name: user.name
+            }
+            await sendValidationEmail(dataSend)
+            return next(new AppError('Usuario no veirficado'), 403)
         }
         const accesToken = jwt.sign(
             {
@@ -210,17 +174,11 @@ export const loginController = async (req, res) => {
             .build()
         return res.status(200).json(successResponse)
     } catch (error) {
-        const errorResponse = new ResponseBuilder()
-            .setOk(false)
-            .setStatus(500)
-            .setMessage('ERROR SERVER')
-            .setPayload({ state: error.message })
-            .build();
-        return res.status(500).json(errorResponse);
+        next(error)
     }
 }
 
-export const forgotPasswordController = async (req, res) => {
+export const forgotPasswordController = async (req, res, next) => {
     try {
         const { email } = req.body
         const validaciones = new Validator()
@@ -234,29 +192,14 @@ export const forgotPasswordController = async (req, res) => {
             }
         }
         validaciones.setConfig(config)
-        if (validaciones.validate()) {
-            const response = new ResponseBuilder()
-                .setOk(false)
-                .setStatus(400)
-                .setMessage('Validation Error')
-                .setPayload({
-                    state: config
-                })
-                .build()
-            return res.status(400).json(response)
+        const errores = validaciones.validate()
+        if (errores) {
+            return next(new AppError(errores.join('. '), 400))
         }
-        const user = await User.findOne({ email: email })
 
+        const user = await UserRepository.getUserByEmail(email)
         if (!user) {
-            const response = new ResponseBuilder()
-                .setOk(false)
-                .setStatus(404)
-                .setMessage('Error')
-                .setPayload({
-                    state: 'El usuario no existe'
-                })
-                .build()
-            return res.status(404).json(response)
+            return next(new AppError('El usuario no exite'), 400)
         }
         const reset_token = jwt.sign({
             email: user.email
@@ -283,22 +226,17 @@ export const forgotPasswordController = async (req, res) => {
             .build()
         return res.status(200).json(response)
     } catch (error) {
-        const response = new ResponseBuilder()
-            .setOk(false)
-            .setStatus(500)
-            .setMessage('SERVER ERROR')
-            .setPayload({
-                state: error.message
-            })
-            .build()
-        return res.status(500).json(response)
+        next(error)
     }
 }
 
-export const recoveryPasswordController = async (req, res) => {
+export const recoveryPasswordController = async (req, res, next) => {
     try {
         const validaciones = new Validator()
         const { reset_token } = req.params
+        if (!reset_token) {
+            return next(new AppError('No hay reset_token'), 400)
+        }
         const { password } = req.body
         const config = {
             password: {
@@ -311,34 +249,20 @@ export const recoveryPasswordController = async (req, res) => {
             }
         }
         validaciones.setConfig(config)
-        if (validaciones.validate()) {
-            const response = new ResponseBuilder()
-                .setOk(false)
-                .setStatus(400)
-                .setMessage('Validation Error')
-                .setPayload({
-                    state: config.password.errors
-                })
-                .build()
-            return res.status(400).json(response)
+        const errores = validaciones.validate()
+        if (errores) {
+            return next(new AppError(errores.join('. '), 400))
         }
+
         const codificado = jwt.verify(reset_token, ENVIROMENT.SECRET_KEY)
-        const user = await User.findOne({ email: codificado.email })
+        const user = await UserRepository.getUserByEmail(codificado.email)
         if (!user) {
-            const response = new ResponseBuilder()
-                .setOk(false)
-                .setStatus(404)
-                .setMessage('Error')
-                .setPayload({
-                    state: 'El usuario no existe'
-                })
-                .build()
-            return res.status(404).json(response)
+            return next(new AppError('El usuario no existe'), 400)
         }
-        
+
         const hasedpassword = await bcrypt.hash(password, 10)
-        user.password = hasedpassword
-        await user.save()
+        const updateData = { password: hasedpassword }
+        await UserRepository.userUpdateByEmail(codificado.email, updateData)
 
         const response = new ResponseBuilder()
             .setOk(true)
@@ -350,15 +274,35 @@ export const recoveryPasswordController = async (req, res) => {
             .build()
         return res.status(200).json(response)
     } catch (error) {
-        const response = new ResponseBuilder()
-            .setOk(false)
-            .setStatus(404)
-            .setMessage('Error')
-            .setPayload({
-                state: error.message
-            })
-            .build()
-        return res.status(500).json(response)
+        next(error)
     }
+}
 
+export const revalidatioEmailController = async (req, res, next) => {
+    try {
+        const { email } = req.params
+        if (!email) {
+            return next(new AppError('No se encontro email'), 400)
+        }
+        const user = await UserRepository.getUserByEmail(email)
+        if (!user) {
+            return next(new AppError('El usuario no existe'), 400)
+        }
+        if (user) {
+            const dataSend = {
+                email: user.email,
+                name: user.name
+            }
+            await sendValidationEmail(dataSend)
+        }
+        const response = new ResponseBuilder()
+            .setOk(true)
+            .setStatus(200)
+            .setMessage('Enviado')
+            .setPayload({ detail: 'Enviado con exito' })
+            .build()
+        return res.status(200).json(response)
+    } catch (error) {
+        next(error)
+    }
 }

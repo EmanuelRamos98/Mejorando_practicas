@@ -1,8 +1,10 @@
 import { useState } from "react"
 
 const useForm = (form) => {
+    
     const [formState, setFormState] = useState(form)
     const [errors, setErrors] = useState({})
+
     const handleChange = (evento) => {
         const field_name = evento.target.name
         const field_value = evento.target.value
@@ -39,6 +41,7 @@ const useForm = (form) => {
             }))
         }
     }
+
     return {
         formState,
         handleChange,

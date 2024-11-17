@@ -1,12 +1,11 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Forms from '../Componets/Forms'
 
 
 const LogginScreen = () => {
+    const navigate = useNavigate()
     const actionLoggin = async (formState) => {
-        console.log('formulario enviado')
-
         const responseHTTP = await fetch('http://localhost:3000/api/auth/login', {
             method: 'POST',
             headers: {
@@ -14,8 +13,15 @@ const LogginScreen = () => {
             },
             body: JSON.stringify(formState)
         })
-
         const data = await responseHTTP.json()
+        if (data.status === 403) {
+            sessionStorage.setItem('email-sin-verificar', data.payload.email)
+            navigate('/validacion-email')
+        }
+        if (data.ok) {
+            sessionStorage.setItem('acces-token', data.payload.accesToken)
+            navigate('/home')
+        }
         return data
     }
 

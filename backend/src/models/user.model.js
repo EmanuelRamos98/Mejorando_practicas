@@ -28,8 +28,17 @@ const userSchema = new mongoose.Schema({
     activo: {
         type: Boolean,
         default: true
+    },
+    role: {
+        type: String,
+        default: 'user',
+        required: true
     }
-})
+},
+    {
+        timestamps: true
+    }
+)
 
 const User = mongoose.model('User', userSchema)
 export default User

@@ -1,16 +1,9 @@
-import React, { useState } from 'react'
-import useForm from '../Hooks/useForm'
+import React from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Forms from '../Componets/Forms'
 
 const RecoveryPasswordScreen = () => {
     const { reset_token } = useParams()
-
-    const [errorsState, setErrorsState] = useState({
-        password: '',
-        general: ''
-    })
-
     const actionRecoveryPassword = async (formState) => {
 
         const response = await fetch('http://localhost:3000/api/auth/recovery-password/' + reset_token,
@@ -24,13 +17,8 @@ const RecoveryPasswordScreen = () => {
                 })
             }
         )
-        const data = await response.json()
-
-        if (!data.ok) {
-            setErrorsState((prevState) => ({
-                ...prevState, password: data.payload.state[0].error
-            }))
-        }
+        const data = await response.json() 
+        return data
     }
 
     const form_fields = [
@@ -55,7 +43,6 @@ const RecoveryPasswordScreen = () => {
         <div>
             <h1>Modifica tu contraseña </h1>
             <Forms action={actionRecoveryPassword} form_fields={form_fields} initial_state_form={initial_state_form}>
-                {errorsState.password && <span>{errorsState.password}</span>}
                 <button type='submit'>Cambiar</button>
                 <Link to='/login'>Iniciar sesion</Link>
             </Forms>

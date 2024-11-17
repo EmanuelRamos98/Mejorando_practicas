@@ -1,32 +1,8 @@
-import React, { useState } from 'react'
-import useForm from '../Hooks/useForm'
-import useErrors from '../Hooks/useErrors'
-import { useNavigate } from 'react-router-dom'
+import React from 'react'
+import Forms from '../Componets/Forms'
 
 const RegisterScreen = () => {
-    const navigate = useNavigate()
-    //cuando invoco a useform se crea otro estado y me devuelve dicho estado una funcion para asociar a cada input del form
-    const { formState, handleChange } = useForm({
-        name: '',
-        email: '',
-        password: ''
-    })
-
-    //Custom hook de validaciones
-    const [errorsState, setErrorsState] = useState({
-        name: '',
-        email: '',
-        password: '',
-        general: ''
-    })
-
-
-    const handleRegistrer = async (event) => {
-        event.preventDefault()
-        console.log('Formulario registro enviado')
-
-        //Que hace fetch?
-        //Nos permite hacer consultas HTTP
+    const actionRegistrer = async (formState) => {
         const responseHTTP = await fetch('http://localhost:3000/api/auth/register', {
             method: 'POST',
             headers: {
@@ -35,80 +11,60 @@ const RegisterScreen = () => {
             body: JSON.stringify(formState)
         })
         const data = await responseHTTP.json()
-        console.log(data);
-        
-        if (!data.ok) {
-            const register = data.payload.state
-            const newErrorState = {}
-            if (typeof register === 'string') {
-                return setErrorsState((prevState)=>({
-                    ...prevState, 
-                    general: register
-                }))
+        return data
+    }
+    const form_fields = [
+        {
+            label_text: 'Ingresa tu Nombre',
+            field_component: 'INPUT',
+            field_container_props: {
+                className: 'row_field'
+            },
+            field_data_props: {
+                name: 'name',
+                id: 'name',
+                placeholder: 'Cosme Fulanito',
+                type: 'text'
             }
-            for (const field in register) {
-                if (register[field].errors.length > 0) {
-                    newErrorState[field] = register[field].errors[0].error
-                }
+        },
+        {
+            label_text: 'Ingresa tu email',
+            field_component: 'INPUT',
+            field_container_props: {
+                className: 'row_field'
+            },
+            field_data_props: {
+                name: 'email',
+                id: 'email',
+                placeholder: 'cosmefulanito@gmail.com',
+                type: 'email'
             }
-            setErrorsState((prevState) => ({
-                ...prevState = newErrorState
-            }))
-        }else{
-            console.log('enviado con exito');
+        },
+        {
+            label_text: 'Ingresa nueva contraseña:',
+            field_component: 'INPUT',
+            field_container_props: {
+                className: 'row_field'
+            },
+            field_data_props: {
+                name: 'password',
+                id: 'password',
+                placeholder: '',
+                type: 'password'
+            }
         }
+    ]
+    const initial_state_form = {
+        name: '',
+        email: '',
+        password: ''
     }
     return (
         <div>
             <h1>Registrate en Brand Name</h1>
-            <form onSubmit={handleRegistrer}>
-                <div>
-                    <label>Ingresa tu nombre: </label>
-                    <input
-                        type="text"
-                        name='name'
-                        id='name'
-                        placeholder='cosme fulanito'
-                        onChange={handleChange}
-                        value={formState.name}
-                    />
-                    {
-                        errorsState.name && <span>{errorsState.name}</span>
-                    }
-                </div>
-                <div>
-                    <label>Ingresa tu email: </label>
-                    <input
-                        type="email"
-                        name='email'
-                        id='email'
-                        placeholder='cosmefulanito@gmail.com'
-                        onChange={handleChange}
-                        value={formState.email}
-                    />
-                    {
-                        errorsState.email && <span>{errorsState.email}</span>
-                    }
-                </div>
-                <div>
-                    <label>Ingresa tu password: </label>
-                    <input
-                        type="password"
-                        name='password'
-                        id='password'
-                        placeholder='password'
-                        onChange={handleChange}
-                        value={formState.password}
-                    />
-                    {
-                        errorsState.password && <span>{errorsState.password}</span>
-                    }
-                </div>
-                {
-                    errorsState.general && <span>{errorsState.general}</span>
-                }
+            <Forms action={actionRegistrer} form_fields={form_fields} initial_state_form={initial_state_form}>
                 <button type='submit'>Registrar</button>
-            </form>
+            </Forms>
         </div>
     )
 }
